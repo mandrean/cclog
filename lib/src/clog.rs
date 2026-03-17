@@ -1,9 +1,8 @@
 use std::{
     collections::HashMap,
-    convert::AsRef,
     env,
     fs::File,
-    io::{stdout, BufWriter, Read, Write},
+    io::{self, BufWriter, Read, Write, stdout},
     path::{Path, PathBuf},
     process::Command,
     result::Result as StdResult,
@@ -14,19 +13,27 @@ use log::debug;
 use regex::Regex;
 
 use crate::{
+    DEFAULT_CONFIG_FILE,
     config::RawCfg,
     error::{Error, Result},
     fmt::{ChangelogFormat, FormatWriter, JsonWriter, MarkdownWriter},
     git::{Commit, Commits},
     link_style::LinkStyle,
     sectionmap::SectionMap,
-    DEFAULT_CONFIG_FILE,
 };
 
-fn regex_default() -> Regex { regex!(r"^([^:\(]+?)(?:\(([^\)]*?)?\))?:(.*)") }
-fn closes_regex_default() -> Regex { regex!(r"(?:Closes|Fixes|Resolves)\s((?:#(\d+)(?:,\s)?)+)") }
-fn breaks_regex_default() -> Regex { regex!(r"(?:Breaks|Broke)\s((?:#(\d+)(?:,\s)?)+)") }
-fn breaking_regex_default() -> Regex { regex!(r"(?i:breaking)") }
+fn regex_default() -> Regex {
+    regex!(r"^([^:\(]+?)(?:\(([^\)]*?)?\))?:(.*)")
+}
+fn closes_regex_default() -> Regex {
+    regex!(r"(?:Closes|Fixes|Resolves)\s((?:#(\d+)(?:,\s)?)+)")
+}
+fn breaks_regex_default() -> Regex {
+    regex!(r"(?:Breaks|Broke)\s((?:#(\d+)(?:,\s)?)+)")
+}
+fn breaking_regex_default() -> Regex {
+    regex!(r"(?i:breaking)")
+}
 
 /// The base struct used to set options and interact with the library.
 #[derive(Debug, Clone)]
@@ -175,7 +182,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     /// ```
     pub fn new() -> Result<Self> {
@@ -194,7 +201,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::with_git_work_tree("/myproject").unwrap();
     /// ```
     pub fn with_git_work_tree<P: AsRef<Path>>(dir: P) -> Result<Self> {
@@ -212,7 +219,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::from_config("/myproject/clog_conf.toml").unwrap();
     /// ```
     pub fn from_config<P: AsRef<Path>>(cfg: P) -> Result<Self> {
@@ -292,11 +299,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().grep("BREAKS");
     /// ```
     #[must_use]
-    pub fn grep<S: Into<String>>(mut self, g: S) -> Clog {
+    pub fn grep<S: Into<String>>(mut self, g: S) -> Self {
         self.grep = g.into();
         self
     }
@@ -306,11 +313,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().format("%H%n%n==END==");
     /// ```
     #[must_use]
-    pub fn format<S: Into<String>>(mut self, f: S) -> Clog {
+    pub fn format<S: Into<String>>(mut self, f: S) -> Self {
         self.format = f.into();
         self
     }
@@ -325,13 +332,13 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new()
     ///     .unwrap()
     ///     .repository("https://github.com/thoughtram/clog");
     /// ```
     #[must_use]
-    pub fn repository<S: Into<String>>(mut self, r: S) -> Clog {
+    pub fn repository<S: Into<String>>(mut self, r: S) -> Self {
         self.repo = Some(r.into());
         self
     }
@@ -344,11 +351,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::{Clog, LinkStyle};
+    /// # use cclog::{Clog, LinkStyle};
     /// let clog = Clog::new().unwrap().link_style(LinkStyle::Stash);
     /// ```
     #[must_use]
-    pub fn link_style(mut self, l: LinkStyle) -> Clog {
+    pub fn link_style(mut self, l: LinkStyle) -> Self {
         self.link_style = l;
         self
     }
@@ -361,11 +368,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().version("v0.2.1-beta3");
     /// ```
     #[must_use]
-    pub fn version<S: Into<String>>(mut self, v: S) -> Clog {
+    pub fn version<S: Into<String>>(mut self, v: S) -> Self {
         self.version = Some(v.into());
         self
     }
@@ -375,11 +382,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().subtitle("My Awesome Release Title");
     /// ```
     #[must_use]
-    pub fn subtitle<S: Into<String>>(mut self, s: S) -> Clog {
+    pub fn subtitle<S: Into<String>>(mut self, s: S) -> Self {
         self.subtitle = Some(s.into());
         self
     }
@@ -393,11 +400,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().from("6d8183f");
     /// ```
     #[must_use]
-    pub fn from<S: Into<String>>(mut self, f: S) -> Clog {
+    pub fn from<S: Into<String>>(mut self, f: S) -> Self {
         self.from = Some(f.into());
         self
     }
@@ -408,11 +415,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().to("123abc4d");
     /// ```
     #[must_use]
-    pub fn to<S: Into<String>>(mut self, t: S) -> Clog {
+    pub fn to<S: Into<String>>(mut self, t: S) -> Self {
         self.to = t.into();
         self
     }
@@ -426,11 +433,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().changelog("/myproject/my_changelog.md");
     /// ```
     #[must_use]
-    pub fn changelog<S: Into<String> + Clone>(mut self, c: S) -> Clog {
+    pub fn changelog<S: Into<String> + Clone>(mut self, c: S) -> Self {
         self.infile = Some(c.clone().into());
         self.outfile = Some(c.into());
         self
@@ -450,11 +457,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().outfile("/myproject/my_changelog.md");
     /// ```
     #[must_use]
-    pub fn outfile<S: Into<String>>(mut self, c: S) -> Clog {
+    pub fn outfile<S: Into<String>>(mut self, c: S) -> Self {
         self.outfile = Some(c.into());
         self
     }
@@ -473,13 +480,13 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new()
     ///     .unwrap()
     ///     .infile("/myproject/my_old_changelog.md");
     /// ```
     #[must_use]
-    pub fn infile<S: Into<String>>(mut self, c: S) -> Clog {
+    pub fn infile<S: Into<String>>(mut self, c: S) -> Self {
         self.infile = Some(c.into());
         self
     }
@@ -490,11 +497,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().git_dir("/myproject/.git");
     /// ```
     #[must_use]
-    pub fn git_dir<P: AsRef<Path>>(mut self, d: P) -> Clog {
+    pub fn git_dir<P: AsRef<Path>>(mut self, d: P) -> Self {
         self.git_dir = Some(d.as_ref().to_path_buf());
         self
     }
@@ -504,11 +511,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().git_work_tree("/myproject");
     /// ```
     #[must_use]
-    pub fn git_work_tree<P: AsRef<Path>>(mut self, d: P) -> Clog {
+    pub fn git_work_tree<P: AsRef<Path>>(mut self, d: P) -> Self {
         self.git_work_tree = Some(d.as_ref().to_path_buf());
         self
     }
@@ -521,11 +528,11 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap().patch_ver(true);
     /// ```
     #[must_use]
-    pub fn patch_ver(mut self, p: bool) -> Clog {
+    pub fn patch_ver(mut self, p: bool) -> Self {
         self.patch_ver = p;
         self
     }
@@ -535,13 +542,26 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::{fmt::ChangelogFormat,Clog};
+    /// # use cclog::{fmt::ChangelogFormat, Clog};
     /// let clog = Clog::new().unwrap().output_format(ChangelogFormat::Json);
     /// ```
     #[must_use]
-    pub fn output_format(mut self, f: ChangelogFormat) -> Clog {
+    pub fn output_format(mut self, f: ChangelogFormat) -> Self {
         self.out_format = f;
         self
+    }
+
+    /// Builds a `git` command pre-configured with `--git-dir` and
+    /// `--work-tree` arguments when set.
+    fn git_command(&self) -> Command {
+        let mut cmd = Command::new("git");
+        if let Some(dir) = self.git_dir.as_deref().and_then(|p| p.to_str()) {
+            cmd.arg(format!("--git-dir={dir}"));
+        }
+        if let Some(tree) = self.git_work_tree.as_deref().and_then(|p| p.to_str()) {
+            cmd.arg(format!("--work-tree={tree}"));
+        }
+        cmd
     }
 
     /// Retrieves a `Vec<Commit>` of only commits we care about.
@@ -549,25 +569,18 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     /// let commits = clog.get_commits();
     /// ```
     pub fn get_commits(&self) -> Result<Commits> {
-        let range = if let Some(from) = self.from.as_ref() {
-            format!("{from}..{}", self.to)
-        } else {
-            "HEAD".to_owned()
+        let range = match self.from.as_ref() {
+            Some(from) => format!("{from}..{}", self.to),
+            None => "HEAD".to_owned(),
         };
 
-        let mut cmd = Command::new("git");
-        if let Some(git_dir) = self.get_git_dir() {
-            cmd.arg(git_dir);
-        }
-        if let Some(git_work_tree) = self.get_git_work_tree() {
-            cmd.arg(git_work_tree);
-        }
-        let output = cmd
+        let output = self
+            .git_command()
             .arg("log")
             .arg("-E")
             .arg(format!("--grep={}", self.grep))
@@ -582,8 +595,8 @@ impl Clog {
             .collect())
     }
 
-    #[doc(hidden)]
-    pub fn parse_raw_commit(&self, commit_str: &str) -> Result<Commit> {
+    /// Parses a raw commit string (from `git log` output) into a `Commit`.
+    pub(crate) fn parse_raw_commit(&self, commit_str: &str) -> Result<Commit> {
         let mut lines = commit_str.lines();
         let hash = lines.next().unwrap_or_default();
 
@@ -596,10 +609,9 @@ impl Clog {
                         .ok_or(Error::UnknownComponent(section.into()))?;
                     let component = caps.get(2).map(|component| {
                         let component = component.as_str();
-                        match self.component_for(component) {
-                            Some(alias) => alias.clone(),
-                            None => component.to_owned(),
-                        }
+                        self.component_for(component)
+                            .cloned()
+                            .unwrap_or_else(|| component.to_owned())
                     });
                     let subject = caps.get(3).map(|c| c.as_str());
                     (subject, component, commit_type)
@@ -611,6 +623,7 @@ impl Clog {
                         .ok_or(Error::UnknownComponent("unk".into()))?,
                 ),
             };
+
         let mut closes = vec![];
         let mut breaks = vec![];
         for line in lines {
@@ -623,7 +636,7 @@ impl Clog {
                 if let Some(cap) = caps.get(2) {
                     breaks.push(cap.as_str().to_owned());
                 }
-            } else if self.breaking_regex.captures(line).is_some() {
+            } else if self.breaking_regex.is_match(line) {
                 breaks.push(String::new());
             }
         }
@@ -643,26 +656,19 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     /// let tag = clog.get_latest_tag().unwrap();
     /// ```
     pub fn get_latest_tag(&self) -> Result<String> {
-        let mut cmd = Command::new("git");
-        if let Some(git_dir) = self.get_git_dir() {
-            cmd.arg(git_dir);
-        }
-        if let Some(git_work_tree) = self.get_git_work_tree() {
-            cmd.arg(git_work_tree);
-        }
-        let output = cmd
+        let output = self
+            .git_command()
             .arg("rev-list")
             .arg("--tags")
             .arg("--max-count=1")
             .output()?;
-        let buf = String::from_utf8_lossy(&output.stdout);
 
-        Ok(buf.trim_matches('\n').to_owned())
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
     }
 
     /// Retrieves the latest tag version from the git directory
@@ -670,26 +676,19 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
-    /// let tag_ver = clog.get_latest_tag_ver();
+    /// let tag_ver = clog.get_latest_tag_ver().unwrap();
     /// ```
-    pub fn get_latest_tag_ver(&self) -> String {
-        let mut cmd = Command::new("git");
-        if let Some(git_dir) = self.get_git_dir() {
-            cmd.arg(git_dir);
-        }
-        if let Some(git_work_tree) = self.get_git_work_tree() {
-            cmd.arg(git_work_tree);
-        }
-        let output = cmd
+    pub fn get_latest_tag_ver(&self) -> Result<String> {
+        let output = self
+            .git_command()
             .arg("describe")
             .arg("--tags")
             .arg("--abbrev=0")
-            .output()
-            .unwrap_or_else(|e| panic!("Failed to run 'git describe' with error: {}", e));
+            .output()?;
 
-        String::from_utf8_lossy(&output.stdout).into_owned()
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
     }
 
     /// Retrieves the hash of the most recent commit from the git directory
@@ -698,39 +697,14 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
-    /// let head_hash = clog.get_last_commit();
+    /// let head_hash = clog.get_last_commit().unwrap();
     /// ```
-    pub fn get_last_commit(&self) -> String {
-        let mut cmd = Command::new("git");
-        if let Some(git_dir) = self.get_git_dir() {
-            cmd.arg(git_dir);
-        }
-        if let Some(git_work_tree) = self.get_git_work_tree() {
-            cmd.arg(git_work_tree);
-        }
-        let output = cmd
-            .arg("rev-parse")
-            .arg("HEAD")
-            .output()
-            .unwrap_or_else(|e| panic!("Failed to run 'git rev-parse' with error: {}", e));
+    pub fn get_last_commit(&self) -> Result<String> {
+        let output = self.git_command().arg("rev-parse").arg("HEAD").output()?;
 
-        String::from_utf8_lossy(&output.stdout).into_owned()
-    }
-
-    fn get_git_work_tree(&self) -> Option<String> {
-        self.git_work_tree
-            .as_deref()
-            .and_then(|p| p.to_str())
-            .map(|s| format!("--work-tree={s}"))
-    }
-
-    fn get_git_dir(&self) -> Option<String> {
-        self.git_dir
-            .as_deref()
-            .and_then(|p| p.to_str())
-            .map(|s| format!("--git-dir={s}"))
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
     }
 
     /// Retrieves the section title for a given alias
@@ -738,7 +712,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     /// let section = clog.section_for("feat");
     /// assert_eq!(Some("Features"), section);
@@ -755,7 +729,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     /// let component = clog.component_for("will_be_none");
     /// assert_eq!(None, component);
@@ -763,9 +737,7 @@ impl Clog {
     pub fn component_for(&self, alias: &str) -> Option<&String> {
         self.component_map
             .iter()
-            .filter(|&(_, v)| v.iter().any(|c| c == alias))
-            .map(|(k, _)| k)
-            .next()
+            .find_map(|(k, v)| v.iter().any(|c| c == alias).then_some(k))
     }
 
     /// Writes the changelog using whatever options have been specified thus
@@ -774,7 +746,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     /// clog.write_changelog();
     /// ```
@@ -790,16 +762,7 @@ impl Clog {
             debug!("outfile and infile not set using stdout");
             let out = stdout();
             let mut out_buf = BufWriter::new(out.lock());
-            match self.out_format {
-                ChangelogFormat::Markdown => {
-                    let mut writer = MarkdownWriter::new(&mut out_buf);
-                    self.write_changelog_with(&mut writer)
-                }
-                ChangelogFormat::Json => {
-                    let mut writer = JsonWriter::new(&mut out_buf);
-                    self.write_changelog_with(&mut writer)
-                }
-            }
+            self.write_format(&mut out_buf)
         }
     }
 
@@ -809,7 +772,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     ///
     /// clog.write_changelog_to("/myproject/new_changelog.md")
@@ -829,21 +792,10 @@ impl Clog {
                 .map(|mut f| f.read_to_string(&mut contents).ok())
                 .ok();
         }
-        contents.shrink_to_fit();
 
         let mut file = File::create(cl.as_ref())?;
-        match self.out_format {
-            ChangelogFormat::Markdown => {
-                let mut writer = MarkdownWriter::new(&mut file);
-                self.write_changelog_with(&mut writer)?;
-            }
-            ChangelogFormat::Json => {
-                let mut writer = JsonWriter::new(&mut file);
-                self.write_changelog_with(&mut writer)?;
-            }
-        }
+        self.write_format(&mut file)?;
         write!(&mut file, "\n\n\n")?;
-
         file.write_all(contents.as_bytes())?;
 
         Ok(())
@@ -855,7 +807,7 @@ impl Clog {
     /// # Example
     ///
     /// ```no_run
-    /// # use clog::Clog;
+    /// # use cclog::Clog;
     /// let clog = Clog::new().unwrap();
     ///
     /// clog.write_changelog_from("/myproject/new_old_changelog.md")
@@ -867,40 +819,18 @@ impl Clog {
         File::open(cl.as_ref())
             .map(|mut f| f.read_to_string(&mut contents).ok())
             .ok();
-        contents.shrink_to_fit();
 
         if let Some(ref ofile) = self.outfile {
             debug!("outfile set to: {:?}", ofile);
             let mut file = File::create(ofile)?;
-            match self.out_format {
-                ChangelogFormat::Markdown => {
-                    let mut writer = MarkdownWriter::new(&mut file);
-                    self.write_changelog_with(&mut writer)?;
-                }
-                ChangelogFormat::Json => {
-                    let mut writer = JsonWriter::new(&mut file);
-                    self.write_changelog_with(&mut writer)?;
-                }
-            }
+            self.write_format(&mut file)?;
             file.write_all(contents.as_bytes())?;
         } else {
             debug!("outfile not set, using stdout");
             let out = stdout();
             let mut out_buf = BufWriter::new(out.lock());
-            {
-                match self.out_format {
-                    ChangelogFormat::Markdown => {
-                        let mut writer = MarkdownWriter::new(&mut out_buf);
-                        self.write_changelog_with(&mut writer)?;
-                    }
-                    ChangelogFormat::Json => {
-                        let mut writer = JsonWriter::new(&mut out_buf);
-                        self.write_changelog_with(&mut writer)?;
-                    }
-                }
-            }
+            self.write_format(&mut out_buf)?;
             write!(&mut out_buf, "\n\n\n")?;
-
             out_buf.write_all(contents.as_bytes())?;
         }
 
@@ -912,7 +842,7 @@ impl Clog {
     /// # Examples
     ///
     /// ```no_run
-    /// # use clog::{Clog, fmt::{FormatWriter, MarkdownWriter}};
+    /// # use cclog::{Clog, fmt::{FormatWriter, MarkdownWriter}};
     /// # use std::io;
     /// let clog = Clog::new().unwrap();
     ///
@@ -929,7 +859,173 @@ impl Clog {
     {
         debug!("Writing changelog from writer");
         let sm = SectionMap::from_commits(self.get_commits()?);
-
         writer.write_changelog(self, &sm)
+    }
+
+    /// Dispatches to the appropriate format writer based on `self.out_format`.
+    fn write_format<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+        match self.out_format {
+            ChangelogFormat::Markdown => {
+                self.write_changelog_with(&mut MarkdownWriter::new(writer))
+            }
+            ChangelogFormat::Json => self.write_changelog_with(&mut JsonWriter::new(writer)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_clog() -> Clog {
+        let mut component_map = HashMap::new();
+        component_map.insert(
+            "LongName".to_owned(),
+            vec!["ln".to_owned(), "long".to_owned()],
+        );
+        Clog {
+            repo: Some("https://github.com/test/repo".to_owned()),
+            component_map,
+            ..Clog::default()
+        }
+    }
+
+    #[test]
+    fn section_for_known_aliases() {
+        let clog = test_clog();
+        assert_eq!(clog.section_for("feat"), Some("Features"));
+        assert_eq!(clog.section_for("ft"), Some("Features"));
+        assert_eq!(clog.section_for("fix"), Some("Bug Fixes"));
+        assert_eq!(clog.section_for("fx"), Some("Bug Fixes"));
+        assert_eq!(clog.section_for("perf"), Some("Performance"));
+        assert_eq!(clog.section_for("unk"), Some("Unknown"));
+        assert_eq!(clog.section_for("breaks"), Some("Breaking Changes"));
+    }
+
+    #[test]
+    fn section_for_unknown_alias() {
+        let clog = test_clog();
+        assert_eq!(clog.section_for("nonexistent"), None);
+    }
+
+    #[test]
+    fn component_for_known_alias() {
+        let clog = test_clog();
+        assert_eq!(clog.component_for("ln"), Some(&"LongName".to_owned()));
+        assert_eq!(clog.component_for("long"), Some(&"LongName".to_owned()));
+    }
+
+    #[test]
+    fn component_for_unknown_alias() {
+        let clog = test_clog();
+        assert_eq!(clog.component_for("unknown"), None);
+    }
+
+    #[test]
+    fn parse_raw_commit_with_component() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    feat(parser): add new parsing logic\n\
+                    \n\
+                    ==END==";
+        let commit = clog.parse_raw_commit(raw).unwrap();
+        assert_eq!(&commit.hash, "abc1234567890abcdef1234567890abcdef123456");
+        assert_eq!(commit.subject.trim(), "add new parsing logic");
+        assert_eq!(&commit.component, "parser");
+        assert_eq!(&commit.commit_type, "Features");
+        assert!(commit.closes.is_empty());
+        assert!(commit.breaks.is_empty());
+    }
+
+    #[test]
+    fn parse_raw_commit_without_component() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    fix: correct a bug\n\
+                    \n\
+                    ==END==";
+        let commit = clog.parse_raw_commit(raw).unwrap();
+        assert_eq!(commit.subject.trim(), "correct a bug");
+        assert!(commit.component.is_empty());
+        assert_eq!(&commit.commit_type, "Bug Fixes");
+    }
+
+    #[test]
+    fn parse_raw_commit_with_closes() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    feat(ui): add button\n\
+                    \n\
+                    Closes #42\n\
+                    ==END==";
+        let commit = clog.parse_raw_commit(raw).unwrap();
+        assert_eq!(commit.closes, vec!["42"]);
+    }
+
+    #[test]
+    fn parse_raw_commit_with_breaks() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    feat(api): change endpoint\n\
+                    \n\
+                    Breaks #10\n\
+                    ==END==";
+        let commit = clog.parse_raw_commit(raw).unwrap();
+        assert_eq!(commit.breaks, vec!["10"]);
+    }
+
+    #[test]
+    fn parse_raw_commit_with_breaking_keyword() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    feat(api): change endpoint\n\
+                    \n\
+                    BREAKING CHANGE: removed old API\n\
+                    ==END==";
+        let commit = clog.parse_raw_commit(raw).unwrap();
+        assert_eq!(commit.breaks, vec![""]);
+    }
+
+    #[test]
+    fn parse_raw_commit_with_component_alias() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    feat(ln): something\n\
+                    \n\
+                    ==END==";
+        let commit = clog.parse_raw_commit(raw).unwrap();
+        assert_eq!(&commit.component, "LongName");
+    }
+
+    #[test]
+    fn parse_raw_commit_unknown_type_errors() {
+        let clog = test_clog();
+        let raw = "abc1234567890abcdef1234567890abcdef123456\n\
+                    chore(deps): bump version\n\
+                    \n\
+                    ==END==";
+        assert!(clog.parse_raw_commit(raw).is_err());
+    }
+
+    #[test]
+    fn builder_methods_chain() {
+        let clog = Clog::default()
+            .repository("https://github.com/test/repo")
+            .version("1.0.0")
+            .subtitle("Release")
+            .from("abc123")
+            .to("def456")
+            .patch_ver(true)
+            .link_style(LinkStyle::Gitlab)
+            .output_format(ChangelogFormat::Json);
+
+        assert_eq!(clog.repo, Some("https://github.com/test/repo".to_owned()));
+        assert_eq!(clog.version, Some("1.0.0".to_owned()));
+        assert_eq!(clog.subtitle, Some("Release".to_owned()));
+        assert_eq!(clog.from, Some("abc123".to_owned()));
+        assert_eq!(clog.to, "def456");
+        assert!(clog.patch_ver);
+        assert_eq!(clog.link_style, LinkStyle::Gitlab);
+        assert_eq!(clog.out_format, ChangelogFormat::Json);
     }
 }

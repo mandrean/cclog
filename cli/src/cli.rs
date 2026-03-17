@@ -1,10 +1,10 @@
+use cclog::{Clog, LinkStyle as ClogLinkStyle, fmt::ChangelogFormat};
 use clap::{Parser, ValueEnum};
-use cclog::{fmt::ChangelogFormat, Clog, LinkStyle as ClogLinkStyle};
 use strum::{Display, EnumString};
 
 use crate::{
-    error::{CliError, CliResult},
     DEFAULT_CONFIG_FILE,
+    error::{CliError, CliResult},
 };
 
 static VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -139,15 +139,13 @@ pub struct Args {
 impl Args {
     pub fn into_clog(self) -> CliResult<Clog> {
         debugln!("Creating clog from matches");
-        let mut clog = if self.work_tree.is_some() && self.git_dir.is_some() {
+        let mut clog = if let (Some(git_dir), Some(work_tree)) = (&self.git_dir, &self.work_tree) {
             debugln!(
                 "User passed in both\n\tworking dir: {:?}\n\tgit dir: {:?}",
-                self.work_tree,
-                self.git_dir
+                work_tree,
+                git_dir
             );
-            Clog::new()?
-                .git_dir(self.git_dir.as_ref().unwrap())
-                .git_work_tree(self.work_tree.as_ref().unwrap())
+            Clog::new()?.git_dir(git_dir).git_work_tree(work_tree)
         } else if let Some(dir) = &self.work_tree {
             debugln!("User passed in working dir: {:?}", dir);
             // use --config --work-tree
@@ -170,7 +168,7 @@ impl Args {
                 self.setversion
             } else if major || minor || patch {
                 let mut had_v = false;
-                let v_string = clog.get_latest_tag_ver();
+                let v_string = clog.get_latest_tag_ver()?;
                 let first_char = v_string.chars().next().unwrap_or(' ');
                 let v_slice = if first_char == 'v' || first_char == 'V' {
                     had_v = true;

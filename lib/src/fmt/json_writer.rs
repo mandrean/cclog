@@ -1,9 +1,44 @@
-use std::{collections::BTreeMap, io};
+use std::io;
 
-use log::debug;
+use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::{clog::Clog, error::Result, fmt::FormatWriter, git::Commit, sectionmap::SectionMap};
+
+#[derive(Serialize)]
+struct Changelog {
+    header: Header,
+    sections: Option<Vec<Section>>,
+}
+
+#[derive(Serialize)]
+struct Header {
+    version: Option<String>,
+    patch_version: bool,
+    subtitle: Option<String>,
+    date: String,
+}
+
+#[derive(Serialize)]
+struct Section {
+    title: String,
+    commits: Option<Vec<CommitEntry>>,
+}
+
+#[derive(Serialize)]
+struct CommitEntry {
+    component: Option<String>,
+    subject: String,
+    commit_link: String,
+    closes: Option<Vec<IssueRef>>,
+    breaks: Option<Vec<IssueRef>>,
+}
+
+#[derive(Serialize)]
+struct IssueRef {
+    issue: String,
+    issue_link: String,
+}
 
 /// Wraps a `std::io::Write` object to write `clog` output in a JSON format
 ///
@@ -11,7 +46,7 @@ use crate::{clog::Clog, error::Result, fmt::FormatWriter, git::Commit, sectionma
 ///
 /// ```no_run
 /// # use std::fs::File;
-/// # use clog::{SectionMap, Clog, fmt::JsonWriter};
+/// # use cclog::{SectionMap, Clog, fmt::JsonWriter};
 /// let clog = Clog::new().unwrap();
 ///
 /// // Get the commits we're interested in...
@@ -37,7 +72,7 @@ impl<'a> JsonWriter<'a> {
     ///
     /// ```no_run
     /// # use std::io::{stdout, BufWriter};
-    /// # use clog::{Clog, fmt::JsonWriter};
+    /// # use cclog::{Clog, fmt::JsonWriter};
     /// let clog = Clog::new().unwrap();
     ///
     /// // Create a JsonWriter to wrap stdout
@@ -45,161 +80,200 @@ impl<'a> JsonWriter<'a> {
     /// let mut out_buf = BufWriter::new(out.lock());
     /// let mut writer = JsonWriter::new(&mut out_buf);
     /// ```
-    pub fn new<T: io::Write>(writer: &'a mut T) -> JsonWriter<'a> { JsonWriter(writer) }
-}
-
-impl<'a> JsonWriter<'a> {
-    /// Writes the initial header inforamtion for a release
-    fn write_header(&mut self, options: &Clog) -> Result<()> {
-        write!(
-            self.0,
-            "\"header\":{{\"version\":{:?},\"patch_version\":{:?},\"subtitle\":{},",
-            options.version,
-            options.patch_ver,
-            options.subtitle.as_deref().unwrap_or("null"),
-        )?;
-
-        let now = OffsetDateTime::now_utc();
-        // unwrap because the format description is static
-        let date = now.format(&time::format_description::parse("[year]-[month]-[day]").unwrap())?;
-        write!(self.0, "\"date\":\"{}\"}},", date).map_err(Into::into)
+    pub fn new<T: io::Write>(writer: &'a mut T) -> JsonWriter<'a> {
+        JsonWriter(writer)
     }
 
-    /// Writes a particular section of a changelog
-    fn write_section(
-        &mut self,
-        options: &Clog,
-        section: &BTreeMap<&String, &Vec<Commit>>,
-    ) -> Result<()> {
-        if section.is_empty() {
-            write!(self.0, "\"commits\":null")?;
-            return Ok(());
+    fn build_issue_refs(issues: &[String], options: &Clog) -> Option<Vec<IssueRef>> {
+        if issues.is_empty() {
+            return None;
         }
+        Some(
+            issues
+                .iter()
+                .map(|issue| IssueRef {
+                    issue: issue.clone(),
+                    issue_link: options.link_style.issue_link(issue, options.repo.as_ref()),
+                })
+                .collect(),
+        )
+    }
 
-        write!(self.0, "\"commits\":[")?;
-        let mut s_it = section.iter().peekable();
-        while let Some((component, entries)) = s_it.next() {
-            let mut e_it = entries.iter().peekable();
-            debug!("Writing component: {}", component);
-            while let Some(entry) = e_it.next() {
-                debug!("Writing commit: {}", &*entry.subject);
-                write!(self.0, "{{\"component\":")?;
-                if component.is_empty() {
-                    write!(self.0, "null,")?;
-                } else {
-                    write!(self.0, "{:?},", component)?;
-                }
-                write!(
-                    self.0,
-                    "\"subject\":{:?},\"commit_link\":{:?},\"closes\":",
-                    entry.subject,
-                    options
-                        .link_style
-                        .commit_link(&*entry.hash, options.repo.as_deref())
-                )?;
-
-                if entry.closes.is_empty() {
-                    write!(self.0, "null,")?;
-                } else {
-                    write!(self.0, "[")?;
-                    let mut c_it = entry.closes.iter().peekable();
-                    while let Some(issue) = c_it.next() {
-                        write!(
-                            self.0,
-                            "{{\"issue\":{},\"issue_link\":{:?}}}",
-                            issue,
-                            options.link_style.issue_link(issue, options.repo.as_ref())
-                        )?;
-                        if c_it.peek().is_some() {
-                            debug!("There are more close commits, adding comma");
-                            write!(self.0, ",")?;
-                        } else {
-                            debug!("There are no more close commits, no comma required");
-                        }
-                    }
-                    write!(self.0, "],")?;
-                }
-                write!(self.0, "\"breaks\":")?;
-                if entry.breaks.is_empty() {
-                    write!(self.0, "null}}")?;
-                } else {
-                    write!(self.0, "[")?;
-                    let mut c_it = entry.closes.iter().peekable();
-                    while let Some(issue) = c_it.next() {
-                        write!(
-                            self.0,
-                            "{{\"issue\":{},\"issue_link\":{:?}}}",
-                            issue,
-                            options.link_style.issue_link(issue, options.repo.as_ref())
-                        )?;
-                        if c_it.peek().is_some() {
-                            debug!("There are more breaks commits, adding comma");
-                            write!(self.0, ",")?;
-                        } else {
-                            debug!("There are no more breaks commits, no comma required");
-                        }
-                    }
-                    write!(self.0, "]}}")?;
-                }
-                if e_it.peek().is_some() {
-                    debug!("There are more commits, adding comma");
-                    write!(self.0, ",")?;
-                } else {
-                    debug!("There are no more commits, no comma required");
-                }
-            }
-            if s_it.peek().is_some() {
-                debug!("There are more sections, adding comma");
-                write!(self.0, ",")?;
+    fn build_commit_entry(entry: &Commit, options: &Clog) -> CommitEntry {
+        CommitEntry {
+            component: if entry.component.is_empty() {
+                None
             } else {
-                debug!("There are no more commits, no comma required");
-            }
+                Some(entry.component.clone())
+            },
+            subject: entry.subject.clone(),
+            commit_link: options
+                .link_style
+                .commit_link(&entry.hash, options.repo.as_ref()),
+            closes: Self::build_issue_refs(&entry.closes, options),
+            breaks: Self::build_issue_refs(&entry.breaks, options),
         }
-        write!(self.0, "]").map_err(Into::into)
     }
 
-    /// Writes some contents to the `Write` writer object
-    #[allow(dead_code)]
-    fn write(&mut self, content: &str) -> io::Result<()> { write!(self.0, "{}", content) }
+    fn build_section(
+        title: &str,
+        compmap: &crate::sectionmap::ComponentMap,
+        options: &Clog,
+    ) -> Section {
+        let commits: Vec<CommitEntry> = compmap
+            .values()
+            .flat_map(|entries| entries.iter().map(|e| Self::build_commit_entry(e, options)))
+            .collect();
+
+        Section {
+            title: title.to_owned(),
+            commits: if commits.is_empty() {
+                None
+            } else {
+                Some(commits)
+            },
+        }
+    }
 }
 
-impl<'a> FormatWriter for JsonWriter<'a> {
+impl FormatWriter for JsonWriter<'_> {
     fn write_changelog(&mut self, options: &Clog, sm: &SectionMap) -> Result<()> {
-        debug!("Writing JSON changelog");
-        write!(self.0, "{{")?;
-        self.write_header(options)?;
+        let now = OffsetDateTime::now_utc();
+        let date = now.format(&time::format_description::parse("[year]-[month]-[day]").unwrap())?;
 
-        write!(self.0, "\"sections\":")?;
-        let mut s_it = options
+        let sections: Vec<Section> = options
             .section_map
             .keys()
-            .filter_map(|sec| sm.sections.get(sec).map(|compmap| (sec, compmap)))
-            .peekable();
-        if s_it.peek().is_some() {
-            debug!("There are sections to write");
-            write!(self.0, "[")?;
-            while let Some((sec, compmap)) = s_it.next() {
-                debug!("Writing section: {sec}");
-                write!(self.0, "{{\"title\":{sec:?},")?;
+            .filter_map(|sec| {
+                sm.sections
+                    .get(sec)
+                    .map(|compmap| Self::build_section(sec, compmap, options))
+            })
+            .collect();
 
-                self.write_section(options, &compmap.iter().collect::<BTreeMap<_, _>>())?;
+        let changelog = Changelog {
+            header: Header {
+                version: options.version.clone(),
+                patch_version: options.patch_ver,
+                subtitle: options.subtitle.clone(),
+                date,
+            },
+            sections: if sections.is_empty() {
+                None
+            } else {
+                Some(sections)
+            },
+        };
 
-                write!(self.0, "}}")?;
-                if s_it.peek().is_some() {
-                    debug!("There are more sections, adding comma");
-                    write!(self.0, ",")?;
-                } else {
-                    debug!("There are no more sections, no comma required");
-                }
-            }
-            write!(self.0, "]")?;
-        } else {
-            debug!("There are no sections to write");
-            write!(self.0, "null")?;
-        }
-
-        write!(self.0, "}}")?;
-        debug!("Finished writing sections, flushing");
+        serde_json::to_writer(&mut self.0, &changelog)
+            .map_err(|e| crate::error::Error::Io(e.into()))?;
         self.0.flush().map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_clog() -> Clog {
+        Clog::default()
+            .repository("https://github.com/test/repo")
+            .version("1.0.0")
+            .subtitle("Release")
+    }
+
+    #[test]
+    fn write_changelog_with_subtitle() {
+        let clog = test_clog();
+        let sm = SectionMap::from_commits(vec![]);
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new(&mut buf);
+        writer.write_changelog(&clog, &sm).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(v["header"]["subtitle"], "Release");
+        assert_eq!(v["header"]["version"], "1.0.0");
+        assert_eq!(v["header"]["patch_version"], false);
+        assert!(v["sections"].is_null());
+    }
+
+    #[test]
+    fn write_changelog_null_subtitle() {
+        let clog = Clog::default().version("1.0.0");
+        let sm = SectionMap::from_commits(vec![]);
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new(&mut buf);
+        writer.write_changelog(&clog, &sm).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert!(v["header"]["subtitle"].is_null());
+    }
+
+    #[test]
+    fn write_changelog_with_commits() {
+        let clog = test_clog();
+        let commits = vec![
+            Commit {
+                hash: "abc1234567890abcdef1234567890abcdef123456".to_owned(),
+                subject: "change api".to_owned(),
+                component: "api".to_owned(),
+                closes: vec!["99".to_owned()],
+                breaks: vec!["42".to_owned()],
+                commit_type: "Features".to_owned(),
+            },
+            Commit {
+                hash: "def1234567890abcdef1234567890abcdef123456".to_owned(),
+                subject: "fix crash".to_owned(),
+                component: "".to_owned(),
+                closes: vec![],
+                breaks: vec![],
+                commit_type: "Bug Fixes".to_owned(),
+            },
+        ];
+        let sm = SectionMap::from_commits(commits);
+
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new(&mut buf);
+        writer.write_changelog(&clog, &sm).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        // Verify it's valid JSON
+        assert!(v["sections"].is_array());
+
+        // Find the Features section
+        let sections = v["sections"].as_array().unwrap();
+        let features = sections.iter().find(|s| s["title"] == "Features").unwrap();
+        let commits = features["commits"].as_array().unwrap();
+        assert_eq!(commits[0]["component"], "api");
+        assert_eq!(commits[0]["subject"], "change api");
+
+        // Verify breaks contains issue 42, not 99
+        assert_eq!(commits[0]["breaks"][0]["issue"], "42");
+        // Verify closes contains issue 99
+        assert_eq!(commits[0]["closes"][0]["issue"], "99");
+
+        // Find the Bug Fixes section
+        let fixes = sections.iter().find(|s| s["title"] == "Bug Fixes").unwrap();
+        let fix_commits = fixes["commits"].as_array().unwrap();
+        assert!(fix_commits[0]["component"].is_null());
+        assert!(fix_commits[0]["closes"].is_null());
+        assert!(fix_commits[0]["breaks"].is_null());
+    }
+
+    #[test]
+    fn output_is_valid_json() {
+        let clog = test_clog();
+        let sm = SectionMap::from_commits(vec![]);
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new(&mut buf);
+        writer.write_changelog(&clog, &sm).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        // Must parse as valid JSON
+        let result: std::result::Result<serde_json::Value, _> = serde_json::from_str(&output);
+        assert!(result.is_ok(), "Invalid JSON: {output}");
     }
 }

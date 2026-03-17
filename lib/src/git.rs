@@ -15,5 +15,5 @@ pub struct Commit {
     pub commit_type: String,
 }
 
-/// A convienience type for multiple commits
+/// A convenience type for multiple commits
 pub type Commits = Vec<Commit>;
