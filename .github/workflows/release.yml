@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+
+  release:
+    name: Release
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Skip if last commit was a release
+        id: guard
+        run: |
+          msg=$(git log -1 --format='%s')
+          if [[ "$msg" == "chore: release"* ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.guard.outputs.skip == 'false'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.guard.outputs.skip == 'false'
+      - name: Install semantic-rs
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          curl -fsSL https://github.com/mandrean/semantic-rs/releases/download/v2.0.2/semantic-rs-linux-amd64 \
+            -o /usr/local/bin/semantic-rs
+          chmod +x /usr/local/bin/semantic-rs
+      - name: Configure git
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          git config user.name "semantic-rs"
+          git config user.email "semantic-rs@users.noreply.github.com"
+      - name: Release
+        if: steps.guard.outputs.skip == 'false'
+        run: semantic-rs -w yes -r yes -b master
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}

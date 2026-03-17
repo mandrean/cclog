@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 semver = "1"
 clap = { version = "4", features = ["derive", "wrap_help"] }
-cclog = { path = "../lib" }
+cclog = { version = "0.12.0", path = "../lib" }
 ansi_term = { version = "0.12", optional = true }
 strum = { version = "0.27", features = ["derive"] }
 
