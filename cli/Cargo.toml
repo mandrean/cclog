@@ -2,7 +2,7 @@
 name = "cclog-cli"
 version = "0.12.0"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version = "1.88.0"
 authors = [
     "Christoph Burgdorf <christoph.burgdorf@bvsn.org>",
     "Sebastian Mandrean <sebastian.mandrean@gmail.com>",
