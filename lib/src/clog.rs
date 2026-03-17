@@ -627,15 +627,15 @@ impl Clog {
         let mut closes = vec![];
         let mut breaks = vec![];
         for line in lines {
-            if let Some(caps) = self.closes_regex.captures(line) {
-                if let Some(cap) = caps.get(2) {
-                    closes.push(cap.as_str().to_owned());
-                }
+            if let Some(caps) = self.closes_regex.captures(line)
+                && let Some(cap) = caps.get(2)
+            {
+                closes.push(cap.as_str().to_owned());
             }
-            if let Some(caps) = self.breaks_regex.captures(line) {
-                if let Some(cap) = caps.get(2) {
-                    breaks.push(cap.as_str().to_owned());
-                }
+            if let Some(caps) = self.breaks_regex.captures(line)
+                && let Some(cap) = caps.get(2)
+            {
+                breaks.push(cap.as_str().to_owned());
             } else if self.breaking_regex.is_match(line) {
                 breaks.push(String::new());
             }
