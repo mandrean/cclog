@@ -10,7 +10,7 @@ use crate::{clog::Clog, error::Result, fmt::FormatWriter, git::Commit, sectionma
 ///
 /// ```no_run
 /// # use std::fs::File;
-/// # use clog::{SectionMap, Clog, fmt::MarkdownWriter};
+/// # use cclog::{SectionMap, Clog, fmt::MarkdownWriter};
 /// let clog = Clog::new().unwrap();
 ///
 /// // Get the commits we're interested in...
@@ -36,7 +36,7 @@ impl<'a> MarkdownWriter<'a> {
     ///
     /// ```no_run
     /// # use std::io::BufWriter;
-    /// # use clog::{Clog, fmt::MarkdownWriter};
+    /// # use cclog::{Clog, fmt::MarkdownWriter};
     /// let clog = Clog::new().unwrap();
     ///
     /// // Create a MarkdownWriter to wrap stdout
@@ -154,7 +154,7 @@ impl<'a> MarkdownWriter<'a> {
     }
 }
 
-impl<'a> FormatWriter for MarkdownWriter<'a> {
+impl FormatWriter for MarkdownWriter<'_> {
     fn write_changelog(&mut self, options: &Clog, sm: &SectionMap) -> Result<()> {
         self.write_header(options)?;
 
@@ -172,5 +172,107 @@ impl<'a> FormatWriter for MarkdownWriter<'a> {
         }
 
         self.0.flush().map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::Commit;
+
+    fn test_clog() -> Clog {
+        Clog::default()
+            .repository("https://github.com/test/repo")
+            .version("1.0.0")
+    }
+
+    fn test_commit(component: &str, subject: &str) -> Commit {
+        Commit {
+            hash: "abc1234567890abcdef1234567890abcdef123456".to_owned(),
+            subject: subject.to_owned(),
+            component: component.to_owned(),
+            closes: vec![],
+            breaks: vec![],
+            commit_type: "Features".to_owned(),
+        }
+    }
+
+    #[test]
+    fn write_header_normal_release() {
+        let clog = test_clog();
+        let mut buf = Vec::new();
+        let mut writer = MarkdownWriter::new(&mut buf);
+        writer.write_header(&clog).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        assert!(output.contains("<a name=\"1.0.0\"></a>"));
+        assert!(output.contains("## 1.0.0"));
+        assert!(!output.contains("### 1.0.0"));
+    }
+
+    #[test]
+    fn write_header_patch_release() {
+        let clog = test_clog().patch_ver(true);
+        let mut buf = Vec::new();
+        let mut writer = MarkdownWriter::new(&mut buf);
+        writer.write_header(&clog).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        assert!(output.contains("### 1.0.0"));
+    }
+
+    #[test]
+    fn write_section_with_commits() {
+        let clog = test_clog();
+        let commits = vec![test_commit("parser", "add feature")];
+        let component_key = "parser".to_owned();
+        let mut section = BTreeMap::new();
+        section.insert(&component_key, &commits);
+
+        let mut buf = Vec::new();
+        let mut writer = MarkdownWriter::new(&mut buf);
+        writer.write_section(&clog, "Features", &section).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        assert!(output.contains("#### Features"));
+        assert!(output.contains("**parser:**"));
+        assert!(output.contains("add feature"));
+        assert!(output.contains("[abc12345]"));
+    }
+
+    #[test]
+    fn write_section_empty() {
+        let clog = test_clog();
+        let section = BTreeMap::new();
+
+        let mut buf = Vec::new();
+        let mut writer = MarkdownWriter::new(&mut buf);
+        writer.write_section(&clog, "Features", &section).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn write_section_with_closes() {
+        let clog = test_clog();
+        let commits = vec![Commit {
+            hash: "abc1234567890abcdef1234567890abcdef123456".to_owned(),
+            subject: "fix thing".to_owned(),
+            component: "".to_owned(),
+            closes: vec!["42".to_owned()],
+            breaks: vec![],
+            commit_type: "Bug Fixes".to_owned(),
+        }];
+        let component_key = "".to_owned();
+        let mut section = BTreeMap::new();
+        section.insert(&component_key, &commits);
+
+        let mut buf = Vec::new();
+        let mut writer = MarkdownWriter::new(&mut buf);
+        writer.write_section(&clog, "Bug Fixes", &section).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        assert!(output.contains("closes [#42]"));
     }
 }
