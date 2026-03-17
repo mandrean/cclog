@@ -19,8 +19,8 @@ impl SectionMap {
     ///
     /// ```no_run
     /// # use std::fs::File;
-    /// # use clog::{Clog, SectionMap};
-    /// # use clog::fmt::{FormatWriter, MarkdownWriter};
+    /// # use cclog::{Clog, SectionMap};
+    /// # use cclog::fmt::{FormatWriter, MarkdownWriter};
     /// let clog = Clog::new().unwrap();
     ///
     /// // Get the commits we're interested in...
@@ -56,5 +56,77 @@ impl SectionMap {
         }
 
         sm
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn commit(commit_type: &str, component: &str, subject: &str) -> Commit {
+        Commit {
+            hash: "abc12345".to_owned(),
+            subject: subject.to_owned(),
+            component: component.to_owned(),
+            closes: vec![],
+            breaks: vec![],
+            commit_type: commit_type.to_owned(),
+        }
+    }
+
+    #[test]
+    fn groups_by_type_and_component() {
+        let commits = vec![
+            commit("Features", "parser", "add parsing"),
+            commit("Features", "cli", "add flag"),
+            commit("Bug Fixes", "parser", "fix crash"),
+        ];
+        let sm = SectionMap::from_commits(commits);
+
+        assert!(sm.sections.contains_key("Features"));
+        assert!(sm.sections.contains_key("Bug Fixes"));
+
+        let features = &sm.sections["Features"];
+        assert!(features.contains_key("parser"));
+        assert!(features.contains_key("cli"));
+        assert_eq!(features["parser"].len(), 1);
+        assert_eq!(features["cli"].len(), 1);
+
+        let fixes = &sm.sections["Bug Fixes"];
+        assert_eq!(fixes["parser"].len(), 1);
+    }
+
+    #[test]
+    fn breaking_changes_creates_separate_section() {
+        let commits = vec![Commit {
+            hash: "abc12345".to_owned(),
+            subject: "change api".to_owned(),
+            component: "api".to_owned(),
+            closes: vec![],
+            breaks: vec!["10".to_owned()],
+            commit_type: "Features".to_owned(),
+        }];
+        let sm = SectionMap::from_commits(commits);
+
+        // Should appear in both "Features" and "Breaking Changes"
+        assert!(sm.sections.contains_key("Features"));
+        assert!(sm.sections.contains_key("Breaking Changes"));
+        assert_eq!(sm.sections["Breaking Changes"]["api"].len(), 1);
+    }
+
+    #[test]
+    fn empty_commits() {
+        let sm = SectionMap::from_commits(vec![]);
+        assert!(sm.sections.is_empty());
+    }
+
+    #[test]
+    fn multiple_commits_same_component() {
+        let commits = vec![
+            commit("Features", "ui", "add button"),
+            commit("Features", "ui", "add dialog"),
+        ];
+        let sm = SectionMap::from_commits(commits);
+        assert_eq!(sm.sections["Features"]["ui"].len(), 2);
     }
 }
