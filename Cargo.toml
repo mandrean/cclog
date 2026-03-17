@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/clog-cli"]
+resolver = "2"
+
 [package]
 repository = "https://github.com/clog-tool/clog-lib"
 readme = "README.md"
