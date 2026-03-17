@@ -100,16 +100,15 @@ impl Default for Clog {
         sections.insert("Unknown".to_owned(), vec!["unk".to_owned()]);
         sections.insert("Breaking Changes".to_owned(), vec!["breaks".to_owned()]);
 
+        let grep = sections
+            .values()
+            .flat_map(|v| v.iter().map(|al| format!("^{al}")))
+            .chain(std::iter::once("BREAKING".to_owned()))
+            .collect::<Vec<_>>()
+            .join("|");
+
         Clog {
-            grep: format!(
-                "{}BREAKING'",
-                sections
-                    .values()
-                    .map(|v| v
-                        .iter()
-                        .fold(String::new(), |acc, al| { acc + &format!("^{}|", al)[..] }))
-                    .fold(String::new(), |acc, al| { acc + &format!("^{}|", al)[..] })
-            ),
+            grep,
             format: "%H%n%s%n%b%n==END==".to_string(),
             repo: None,
             link_style: LinkStyle::Github,
@@ -137,17 +136,29 @@ impl TryFrom<RawCfg> for Clog {
     type Error = Error;
 
     fn try_from(cfg: RawCfg) -> StdResult<Self, Self::Error> {
+        let sections = if cfg.sections.is_empty() {
+            Self::default().section_map
+        } else {
+            cfg.sections
+        };
+        let grep = sections
+            .values()
+            .flat_map(|v| v.iter().map(|al| format!("^{al}")))
+            .chain(std::iter::once("BREAKING".to_owned()))
+            .collect::<Vec<_>>()
+            .join("|");
         let mut clog = Self {
             repo: cfg.clog.repository,
             link_style: cfg.clog.link_style,
             subtitle: cfg.clog.subtitle,
             infile: cfg.clog.changelog.clone().or(cfg.clog.infile),
             outfile: cfg.clog.changelog.or(cfg.clog.outfile),
-            section_map: cfg.sections,
+            section_map: sections,
             component_map: cfg.components,
             out_format: cfg.clog.output_format,
             git_dir: cfg.clog.git_dir,
             git_work_tree: cfg.clog.git_work_tree,
+            grep,
             ..Self::default()
         };
         if cfg.clog.from_latest_tag {
@@ -228,10 +239,13 @@ impl Clog {
             Path::new(DEFAULT_CONFIG_FILE).to_path_buf()
         };
 
-        // if dir is None we assume whatever dir the cfg file is also contains the git
-        // metadata
-        let mut dir = dir.unwrap_or(&cfg).to_path_buf();
-        dir.pop();
+        // If dir is explicitly provided, use it as-is.
+        // If dir is None, derive it from the config file's parent directory.
+        let dir = if let Some(dir) = dir {
+            dir.to_path_buf()
+        } else {
+            cfg.parent().unwrap_or(&cfg).to_path_buf()
+        };
         let git_dir;
         let git_work_tree;
         if dir.ends_with(".git") {
@@ -254,16 +268,23 @@ impl Clog {
         })
     }
 
-    // Try and create a clog object from a config file
+    // Try and create a clog object from a config file, falling back to defaults
+    // if the file does not exist.
     fn try_config_file(cfg_file: &Path) -> Result<Self> {
         debug!("Trying to use config file: {:?}", cfg_file);
-        let mut toml_f = File::open(cfg_file)?;
-        let mut toml_s = String::with_capacity(100);
-
-        toml_f.read_to_string(&mut toml_s)?;
-
-        let cfg: RawCfg = toml::from_str(&toml_s[..])?;
-        cfg.try_into()
+        match File::open(cfg_file) {
+            Ok(mut f) => {
+                let mut toml_s = String::with_capacity(100);
+                f.read_to_string(&mut toml_s)?;
+                let cfg: RawCfg = toml::from_str(&toml_s)?;
+                cfg.try_into()
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                debug!("Config file not found, using defaults");
+                Ok(Self::default())
+            }
+            Err(e) => Err(Error::Io(e)),
+        }
     }
 
     /// Sets the grep search pattern for finding commits.
@@ -539,13 +560,18 @@ impl Clog {
             "HEAD".to_owned()
         };
 
-        let output = Command::new("git")
-            .arg(&self.get_git_dir()[..])
-            .arg(&self.get_git_work_tree()[..])
+        let mut cmd = Command::new("git");
+        if let Some(git_dir) = self.get_git_dir() {
+            cmd.arg(git_dir);
+        }
+        if let Some(git_work_tree) = self.get_git_work_tree() {
+            cmd.arg(git_work_tree);
+        }
+        let output = cmd
             .arg("log")
             .arg("-E")
-            .arg(&format!("--grep={}", self.grep))
-            .arg(&format!("--format={}", self.format))
+            .arg(format!("--grep={}", self.grep))
+            .arg(format!("--format={}", self.format))
             .arg(&range)
             .output()?;
 
@@ -604,7 +630,7 @@ impl Clog {
 
         Ok(Commit {
             hash: hash.to_string(),
-            subject: subject.unwrap().to_owned(),
+            subject: subject.unwrap_or_default().to_owned(),
             component: component.unwrap_or_default(),
             closes,
             breaks,
@@ -622,9 +648,14 @@ impl Clog {
     /// let tag = clog.get_latest_tag().unwrap();
     /// ```
     pub fn get_latest_tag(&self) -> Result<String> {
-        let output = Command::new("git")
-            .arg(&self.get_git_dir()[..])
-            .arg(&self.get_git_work_tree()[..])
+        let mut cmd = Command::new("git");
+        if let Some(git_dir) = self.get_git_dir() {
+            cmd.arg(git_dir);
+        }
+        if let Some(git_work_tree) = self.get_git_work_tree() {
+            cmd.arg(git_work_tree);
+        }
+        let output = cmd
             .arg("rev-list")
             .arg("--tags")
             .arg("--max-count=1")
@@ -644,9 +675,14 @@ impl Clog {
     /// let tag_ver = clog.get_latest_tag_ver();
     /// ```
     pub fn get_latest_tag_ver(&self) -> String {
-        let output = Command::new("git")
-            .arg(&self.get_git_dir()[..])
-            .arg(&self.get_git_work_tree()[..])
+        let mut cmd = Command::new("git");
+        if let Some(git_dir) = self.get_git_dir() {
+            cmd.arg(git_dir);
+        }
+        if let Some(git_work_tree) = self.get_git_work_tree() {
+            cmd.arg(git_work_tree);
+        }
+        let output = cmd
             .arg("describe")
             .arg("--tags")
             .arg("--abbrev=0")
@@ -667,9 +703,14 @@ impl Clog {
     /// let head_hash = clog.get_last_commit();
     /// ```
     pub fn get_last_commit(&self) -> String {
-        let output = Command::new("git")
-            .arg(&self.get_git_dir()[..])
-            .arg(&self.get_git_work_tree()[..])
+        let mut cmd = Command::new("git");
+        if let Some(git_dir) = self.get_git_dir() {
+            cmd.arg(git_dir);
+        }
+        if let Some(git_work_tree) = self.get_git_work_tree() {
+            cmd.arg(git_work_tree);
+        }
+        let output = cmd
             .arg("rev-parse")
             .arg("HEAD")
             .output()
@@ -678,42 +719,18 @@ impl Clog {
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
-    fn get_git_work_tree(&self) -> String {
-        // Check if user supplied a local git dir and working tree
-        if self.git_work_tree.is_none() && self.git_dir.is_none() {
-            // None was provided
-            "".to_owned()
-        } else if self.git_dir.is_some() {
-            // user supplied both
-            format!(
-                "--work-tree={}",
-                self.git_work_tree.clone().unwrap().to_str().unwrap()
-            )
-        } else {
-            // user only supplied a working tree i.e. /home/user/mycode
-            let mut w = self.git_work_tree.clone().unwrap();
-            w.pop();
-            format!("--work-tree={}", w.to_str().unwrap())
-        }
+    fn get_git_work_tree(&self) -> Option<String> {
+        self.git_work_tree
+            .as_deref()
+            .and_then(|p| p.to_str())
+            .map(|s| format!("--work-tree={s}"))
     }
 
-    fn get_git_dir(&self) -> String {
-        // Check if user supplied a local git dir and working tree
-        if self.git_dir.is_none() && self.git_work_tree.is_none() {
-            // None was provided
-            "".to_owned()
-        } else if self.git_work_tree.is_some() {
-            // user supplied both
-            format!(
-                "--git-dir={}",
-                self.git_dir.clone().unwrap().to_str().unwrap()
-            )
-        } else {
-            // user only supplied a git dir i.e. /home/user/mycode/.git
-            let mut g = self.git_dir.clone().unwrap();
-            g.push(".git");
-            format!("--git-dir={}", g.to_str().unwrap())
-        }
+    fn get_git_dir(&self) -> Option<String> {
+        self.git_dir
+            .as_deref()
+            .and_then(|p| p.to_str())
+            .map(|s| format!("--git-dir={s}"))
     }
 
     /// Retrieves the section title for a given alias

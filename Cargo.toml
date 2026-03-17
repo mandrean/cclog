@@ -4,22 +4,22 @@ readme = "README.md"
 keywords = ["git", "log", "changelog", "parser", "parse"]
 license = "MIT"
 name = "clog"
-edition = "2021"
+edition = "2024"
 version = "0.11.0"
-rust-version = "1.67.1" # MSRV
+rust-version = "1.85.0" # MSRV (Rust 2024 edition)
 authors = ["Christoph Burgdorf <christoph.burgdorf@bvsn.org>"]
 description = "A conventional changelog for the rest of us"
 exclude = ["docs/*"]
 
 [dependencies]
-indexmap = { version = "1.0.1", features = ["serde"] }
-regex = "1.6.0"
-toml = "0.5.9"
-time = { version = "0.3.12", features = ["formatting"] }
-thiserror = "1.0.32"
-strum = { version = "0.24.1", features = ["derive"] }
-log = "0.4.17"
-serde = { version = "1.0.143", features = ["derive"] }
+indexmap = { version = "2", features = ["serde"] }
+regex = "1"
+toml = "0.8"
+time = { version = "0.3", features = ["formatting"] }
+thiserror = "2"
+strum = { version = "0.27", features = ["derive"] }
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
 
 [features]
 default = []
