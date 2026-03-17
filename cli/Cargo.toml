@@ -1,0 +1,31 @@
+[package]
+name = "cclog-cli"
+version = "0.12.0"
+edition = "2024"
+rust-version = "1.85.0"
+authors = [
+    "Christoph Burgdorf <christoph.burgdorf@bvsn.org>",
+    "Sebastian Mandrean <sebastian.mandrean@gmail.com>",
+]
+description = "A conventional changelog for the rest of us"
+repository = "https://github.com/mandrean/cclog"
+keywords = ["git", "log", "changelog", "parser", "parse"]
+license = "MIT"
+exclude = ["docs/*"]
+
+[[bin]]
+name = "cclog"
+path = "src/main.rs"
+
+[dependencies]
+semver = "1"
+clap = { version = "4", features = ["derive", "wrap_help"] }
+cclog = { path = "../lib" }
+ansi_term = { version = "0.12", optional = true }
+strum = { version = "0.27", features = ["derive"] }
+
+[features]
+default = ["color"]
+color = ["ansi_term"]
+debug = []
+unstable = []

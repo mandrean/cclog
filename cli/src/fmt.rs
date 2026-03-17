@@ -14,7 +14,7 @@ pub enum Format<T> {
 
 #[cfg(all(feature = "color", not(target_os = "windows")))]
 impl<T: AsRef<str>> Format<T> {
-    fn format(&self) -> ANSIString {
+    fn format(&self) -> ANSIString<'_> {
         match *self {
             Format::Error(ref e) => Red.bold().paint(e.as_ref()),
             Format::Warning(ref e) => Yellow.paint(e.as_ref()),

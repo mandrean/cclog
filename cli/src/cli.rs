@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use clog::{fmt::ChangelogFormat, Clog, LinkStyle as ClogLinkStyle};
+use cclog::{fmt::ChangelogFormat, Clog, LinkStyle as ClogLinkStyle};
 use strum::{Display, EnumString};
 
 use crate::{

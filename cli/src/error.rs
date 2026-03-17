@@ -4,7 +4,7 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
-use clog::error::Error as ClogErr;
+use cclog::error::Error as ClogErr;
 
 use crate::fmt::Format;
 
