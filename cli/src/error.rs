@@ -60,7 +60,7 @@ impl Display for CliError {
 }
 
 impl Error for CliError {
-    fn cause(&self) -> Option<&dyn Error> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             CliError::Semver(e, _) => Some(&**e),
             CliError::Generic(..) => None,
@@ -70,5 +70,7 @@ impl Error for CliError {
 }
 
 impl From<ClogErr> for CliError {
-    fn from(ce: ClogErr) -> Self { CliError::Generic(ce.to_string().to_owned()) }
+    fn from(ce: ClogErr) -> Self {
+        CliError::Generic(ce.to_string().to_owned())
+    }
 }

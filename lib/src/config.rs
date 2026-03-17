@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn dogfood_config() {
-        let cfg = include_str!("../.clog.toml");
+        let cfg = include_str!("../../.clog.toml");
         let res = toml::from_str(cfg);
         assert!(res.is_ok(), "{res:?}");
         let cfg: RawCfg = res.unwrap();
